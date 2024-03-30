@@ -15,16 +15,24 @@
 #define DBG_LVL DBG_LOG
 #include <rtdbg.h>
 
+#define PA8 8
 #define PB0 16
 #define WDT_DEVICE_NAME    "wdt"
 
 static rt_device_t wdg_dev;
+int count = 0;
 
 static void idle_hook(void)
 {
+    if (count > 10) {
+        return;
+    }
+
     /* 在空闲线程的回调函数里喂狗 */
     rt_device_control(wdg_dev, RT_DEVICE_CTRL_WDT_KEEPALIVE, RT_NULL);
     LOG_D("feed the dog!\n");
+
+    count++;
 }
 
 int main(void)
@@ -60,6 +68,11 @@ int main(void)
     rt_thread_idle_sethook(idle_hook);
 
     rt_pin_mode(PB0, PIN_MODE_OUTPUT);
+    rt_pin_mode(PA8, PIN_MODE_OUTPUT);
+
+    rt_pin_write(PA8, PIN_HIGH);
+    rt_thread_mdelay(500);
+    rt_pin_write(PA8, PIN_LOW);
 
     int status = PIN_HIGH;
     while (count++)
