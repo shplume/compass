@@ -32,6 +32,8 @@ struct rt_poll_node
     struct rt_poll_node *next;
 };
 
+static RT_DEFINE_SPINLOCK(_spinlock);
+
 static int __wqueue_pollwake(struct rt_wqueue_node *wait, void *key)
 {
     struct rt_poll_node *pn;
@@ -85,28 +87,30 @@ static int poll_wait_timeout(struct rt_poll_table *pt, int msec)
 
     timeout = rt_tick_from_millisecond(msec);
 
-    level = rt_hw_interrupt_disable();
+    level = rt_spin_lock_irqsave(&_spinlock);
 
     if (timeout != 0 && !pt->triggered)
     {
-        rt_thread_suspend(thread);
-        if (timeout > 0)
+        if (rt_thread_suspend_with_flag(thread, RT_INTERRUPTIBLE) == RT_EOK)
         {
-            rt_timer_control(&(thread->thread_timer),
-                             RT_TIMER_CTRL_SET_TIME,
-                             &timeout);
-            rt_timer_start(&(thread->thread_timer));
+            if (timeout > 0)
+            {
+                rt_timer_control(&(thread->thread_timer),
+                        RT_TIMER_CTRL_SET_TIME,
+                        &timeout);
+                rt_timer_start(&(thread->thread_timer));
+            }
+
+            rt_spin_unlock_irqrestore(&_spinlock, level);
+
+            rt_schedule();
+
+            level = rt_spin_lock_irqsave(&_spinlock);
         }
-
-        rt_hw_interrupt_enable(level);
-
-        rt_schedule();
-
-        level = rt_hw_interrupt_disable();
     }
 
     ret = !pt->triggered;
-    rt_hw_interrupt_enable(level);
+    rt_spin_unlock_irqrestore(&_spinlock, level);
 
     return ret;
 }
@@ -120,29 +124,27 @@ static int do_pollfd(struct pollfd *pollfd, rt_pollreq_t *req)
 
     if (fd >= 0)
     {
-        struct dfs_fd *f = fd_get(fd);
+        struct dfs_file *f = fd_get(fd);
         mask = POLLNVAL;
 
         if (f)
         {
             mask = POLLMASK_DEFAULT;
-            if (f->fops->poll)
+            if (f->vnode->fops->poll)
             {
                 req->_key = pollfd->events | POLLERR | POLLHUP;
 
-                mask = f->fops->poll(f, req);
+                mask = f->vnode->fops->poll(f, req);
 
                 /* dealwith the device return error -1*/
                 if (mask < 0)
                 {
-                    fd_put(f);
                     pollfd->revents = 0;
                     return mask;
                 }
             }
             /* Mask out unneeded events. */
             mask &= pollfd->events | POLLERR | POLLHUP;
-            fd_put(f);
         }
     }
     pollfd->revents = mask;
@@ -154,7 +156,7 @@ static int poll_do(struct pollfd *fds, nfds_t nfds, struct rt_poll_table *pt, in
 {
     int num;
     int istimeout = 0;
-    int n;
+    nfds_t n;
     struct pollfd *pf;
     int  ret = 0;
 

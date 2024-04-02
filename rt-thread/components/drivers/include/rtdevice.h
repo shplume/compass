@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2021, RT-Thread Development Team
+ * Copyright (c) 2006-2023, RT-Thread Development Team
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -12,7 +12,15 @@
 #ifndef __RT_DEVICE_H__
 #define __RT_DEVICE_H__
 
+#include <rtdef.h>
 #include <rtthread.h>
+#include <drivers/core/driver.h>
+
+#include <drivers/classes/block.h>
+#include <drivers/classes/char.h>
+#include <drivers/classes/graphic.h>
+#include <drivers/classes/mtd.h>
+#include <drivers/classes/net.h>
 
 #include "ipc/ringbuffer.h"
 #include "ipc/completion.h"
@@ -94,7 +102,11 @@ extern "C" {
 #endif /* RT_USING_PIN */
 
 #ifdef RT_USING_SENSOR
+#ifdef RT_USING_SENSOR_V2
+#include "drivers/sensor_v2.h"
+#else
 #include "drivers/sensor.h"
+#endif /* RT_USING_SENSOR_V2 */
 #endif /* RT_USING_SENSOR */
 
 #ifdef RT_USING_CAN
@@ -152,6 +164,38 @@ extern "C" {
 #ifdef RT_USING_INPUT_CAPTURE
 #include "drivers/rt_inputcapture.h"
 #endif /* RT_USING_INPUT_CAPTURE */
+
+#ifdef RT_USING_TOUCH
+#include "drivers/touch.h"
+#endif
+
+#ifdef RT_USING_DEV_BUS
+#include "drivers/rt_dev_bus.h"
+#endif
+
+#ifdef RT_USING_LCD
+#include "drivers/lcd.h"
+#endif
+
+#ifdef RT_USING_CLK
+#include "drivers/clk.h"
+#endif /* RT_USING_CLK */
+
+#ifdef RT_USING_DM
+#include "drivers/core/dm.h"
+
+#ifdef RT_USING_OFW
+#include "drivers/ofw.h"
+#include "drivers/ofw_fdt.h"
+#include "drivers/ofw_io.h"
+#include "drivers/ofw_irq.h"
+#include "drivers/ofw_raw.h"
+#endif /* RT_USING_OFW */
+
+#ifdef RT_USING_PIC
+#include "drivers/pic.h"
+#endif
+#endif /* RT_USING_DM */
 
 #ifdef __cplusplus
 }

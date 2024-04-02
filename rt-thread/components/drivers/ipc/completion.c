@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2021, RT-Thread Development Team
+ * Copyright (c) 2006-2023, RT-Thread Development Team
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -7,10 +7,10 @@
  * Date           Author       Notes
  * 2012-09-30     Bernard      first version.
  * 2021-08-18     chenyingchun add comments
+ * 2023-09-15     xqyjlj       perf rt_hw_interrupt_disable/enable
  */
 
 #include <rthw.h>
-#include <rtthread.h>
 #include <rtdevice.h>
 
 #define RT_COMPLETED    1
@@ -26,10 +26,11 @@ void rt_completion_init(struct rt_completion *completion)
     rt_base_t level;
     RT_ASSERT(completion != RT_NULL);
 
-    level = rt_hw_interrupt_disable();
+    rt_spin_lock_init(&(completion->spinlock));
+    level = rt_spin_lock_irqsave(&(completion->spinlock));
     completion->flag = RT_UNCOMPLETED;
     rt_list_init(&completion->suspended_list);
-    rt_hw_interrupt_enable(level);
+    rt_spin_unlock_irqrestore(&(completion->spinlock), level);
 }
 RTM_EXPORT(rt_completion_init);
 
@@ -63,7 +64,7 @@ rt_err_t rt_completion_wait(struct rt_completion *completion,
     result = RT_EOK;
     thread = rt_thread_self();
 
-    level = rt_hw_interrupt_disable();
+    level = rt_spin_lock_irqsave(&(completion->spinlock));
     if (completion->flag != RT_COMPLETED)
     {
         /* only one thread can suspend on complete */
@@ -80,10 +81,13 @@ rt_err_t rt_completion_wait(struct rt_completion *completion,
             thread->error = RT_EOK;
 
             /* suspend thread */
-            rt_thread_suspend(thread);
+            rt_thread_suspend_with_flag(thread, RT_UNINTERRUPTIBLE);
             /* add to suspended list */
             rt_list_insert_before(&(completion->suspended_list),
                                   &(thread->tlist));
+
+            /* current context checking */
+            RT_DEBUG_NOT_IN_INTERRUPT;
 
             /* start timer */
             if (timeout > 0)
@@ -95,7 +99,7 @@ rt_err_t rt_completion_wait(struct rt_completion *completion,
                 rt_timer_start(&(thread->thread_timer));
             }
             /* enable interrupt */
-            rt_hw_interrupt_enable(level);
+            rt_spin_unlock_irqrestore(&(completion->spinlock), level);
 
             /* do schedule */
             rt_schedule();
@@ -103,14 +107,14 @@ rt_err_t rt_completion_wait(struct rt_completion *completion,
             /* thread is waked up */
             result = thread->error;
 
-            level = rt_hw_interrupt_disable();
+            level = rt_spin_lock_irqsave(&(completion->spinlock));
         }
     }
     /* clean completed flag */
     completion->flag = RT_UNCOMPLETED;
 
 __exit:
-    rt_hw_interrupt_enable(level);
+    rt_spin_unlock_irqrestore(&(completion->spinlock), level);
 
     return result;
 }
@@ -129,7 +133,7 @@ void rt_completion_done(struct rt_completion *completion)
     if (completion->flag == RT_COMPLETED)
         return;
 
-    level = rt_hw_interrupt_disable();
+    level = rt_spin_lock_irqsave(&(completion->spinlock));
     completion->flag = RT_COMPLETED;
 
     if (!rt_list_isempty(&(completion->suspended_list)))
@@ -144,14 +148,14 @@ void rt_completion_done(struct rt_completion *completion)
 
         /* resume it */
         rt_thread_resume(thread);
-        rt_hw_interrupt_enable(level);
+        rt_spin_unlock_irqrestore(&(completion->spinlock), level);
 
         /* perform a schedule */
         rt_schedule();
     }
     else
     {
-        rt_hw_interrupt_enable(level);
+        rt_spin_unlock_irqrestore(&(completion->spinlock), level);
     }
 }
 RTM_EXPORT(rt_completion_done);

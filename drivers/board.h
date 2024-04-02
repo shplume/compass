@@ -5,7 +5,7 @@
  *
  * Change Logs:
  * Date           Author       Notes
- * 2024-03-21     RealThread   first version
+ * 2024-04-01     RealThread   first version
  */
 
 #ifndef __BOARD_H__
